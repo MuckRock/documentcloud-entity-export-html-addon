@@ -1,38 +1,54 @@
 """
-This is a hello world add-on for DocumentCloud.
-
-It demonstrates how to write a add-on which can be activated from the
-DocumentCloud add-on system and run using Github Actions.  It receives data
-from DocumentCloud via the request dispatch and writes data back to
-DocumentCloud using the standard API
+Export entities to an HTML view of your document
 """
 
+import json
+import re
+
+import requests
 from documentcloud.addon import AddOn
 
 
-class HelloWorld(AddOn):
-    """An example Add-On for DocumentCloud."""
-
+class EntityExport(AddOn):
     def main(self):
-        """The main add-on functionality goes here."""
-        # fetch your add-on specific data
-        name = self.data.get("name", "world")
 
-        self.set_message("Hello World start!")
+        document = next(self.get_documents())
 
-        # add a hello note to the first page of each selected document
-        for document in self.get_documents():
-            # get_documents will iterate through all documents efficiently,
-            # either selected or by query, dependeing on which is passed in
-            document.annotations.create(f"Hello {name}!", 0)
+        text = document.get_full_text()
 
-        with open("hello.txt", "w+") as file_:
-            file_.write("Hello world!")
-            self.upload_file(file_)
+        resp = self.client.get(f"documents/{document.id}/entities/?expand=entity")
+        occurrences = []
+        for entity in resp.json()["results"]:
+            for occurrence in entity["occurrences"]:
+                occurrences.append(
+                    (
+                        occurrence["offset"],
+                        len(occurrence["content"]),
+                        entity["entity"]["wikipedia_url"],
+                    )
+                )
+        occurrences.sort()
 
-        self.set_message("Hello World end!")
-        self.send_mail("Hello World!", "We finished!")
+        builder = []
+        current = 0
+        for offset, length, url in occurrences:
+            builder.append(text[current:offset])
+            builder.append(f'<a href="{url}">')
+            builder.append(text[offset : offset + length])
+            builder.append(f"</a>")
+            current = offset + length
+
+        builder.append(text[current:])
+        text = "".join(builder)
+
+        with open("template.html") as template, open(
+            f"{document.title}.html", "w+"
+        ) as file:
+            output_text = template.read().replace("{{ text }}", text)
+            file.write(output_text)
+
+            self.upload_file(file)
 
 
 if __name__ == "__main__":
-    HelloWorld().main()
+    EntityExport().main()
