@@ -1,5 +1,6 @@
 title: Entity Export HTML
 description: Export an HTML view of your entities
+instructions: ''
 type: object
 documents:
   - selected
